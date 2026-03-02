@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 220 14% 10%;
+    --foreground: 0 0% 95%;
+
+    --card: 220 12% 14%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 220 12% 14%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 162 48% 45%;
+    --primary-foreground: 220 14% 10%;
+
+    --secondary: 252 40% 55%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 220 10% 22%;
+    --muted-foreground: 220 10% 60%;
+
+    --accent: 36 70% 65%;
+    --accent-foreground: 220 14% 10%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 10% 20%;
+    --input: 220 10% 20%;
+    --ring: 162 48% 45%;
+
+    --radius: 1.25rem;
+
+    --chart-earned: 162 48% 45%;
+    --chart-spent: 252 40% 55%;
+    --chart-available: 68 60% 55%;
+    --chart-savings: 36 70% 65%;
+
+    --sidebar-background: 220 14% 10%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 162 48% 45%;
+    --sidebar-primary-foreground: 220 14% 10%;
+    --sidebar-accent: 220 10% 22%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 220 10% 20%;
+    --sidebar-ring: 162 48% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-family: 'DM Sans', sans-serif;
+  }
+}
