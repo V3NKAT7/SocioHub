@@ -55,29 +55,10 @@ class _LoginScreenState extends State<LoginScreen>
       _isLoading = true;
     });
 
-    // Simulate network delay for realism
-    await Future.delayed(const Duration(milliseconds: 1200));
+    // Brief loading animation for feel
+    await Future.delayed(const Duration(milliseconds: 800));
 
-    final username = _usernameController.text.trim();
-    final password = _passwordController.text;
-
-    if (username.isEmpty || password.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter both username and password.';
-        _isLoading = false;
-      });
-      return;
-    }
-
-    if (username == _validUsername && password == _validPassword) {
-      // Success
-      widget.onLoginSuccess();
-    } else {
-      setState(() {
-        _errorMessage = 'Invalid username or password. Please try again.';
-        _isLoading = false;
-      });
-    }
+    widget.onLoginSuccess();
   }
 
   @override
@@ -102,18 +83,21 @@ class _LoginScreenState extends State<LoginScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: const LinearGradient(
-                          colors: [AppTheme.primary, AppTheme.purple],
+                          colors: [
+                            Color(0xFF1A0533),
+                            Color(0xFF7B2FBE),
+                          ],
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: AppTheme.primary.withOpacity(0.35),
+                            color: const Color(0xFF7B2FBE).withOpacity(0.45),
                             blurRadius: 30,
                             offset: const Offset(0, 8),
                           ),
                         ],
                       ),
                       child: const Center(
-                        child: Text('S',
+                        child: Text('T',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 36,
@@ -123,15 +107,21 @@ class _LoginScreenState extends State<LoginScreen>
                     const SizedBox(height: 24),
                     ShaderMask(
                       shaderCallback: (b) => const LinearGradient(
-                        colors: [AppTheme.primary, AppTheme.purple],
+                        colors: [Color(0xFFD946EF), Color(0xFF7B2FBE)],
                       ).createShader(b),
-                      child: const Text('SocioHub',
+                      child: const Text('Trade99',
                           style: TextStyle(
                               color: Colors.white,
                               fontSize: 32,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.5)),
                     ),
+                    const SizedBox(height: 4),
+                    const Text('powered by GenAIlakes',
+                        style: TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w400)),
                     const SizedBox(height: 8),
                     Text('Sign in to continue',
                         style: TextStyle(

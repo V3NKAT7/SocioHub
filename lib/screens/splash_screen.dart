@@ -121,12 +121,15 @@ class _SplashScreenState extends State<SplashScreen>
                           gradient: const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: [AppTheme.primary, AppTheme.purple],
+                            colors: [
+                              Color(0xFF1A0533), // deep dark purple
+                              Color(0xFF7B2FBE), // neon purple
+                            ],
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: AppTheme.primary
-                                  .withOpacity(0.4 * _pulseAnim.value),
+                              color: Color(0xFF7B2FBE)
+                                  .withOpacity(0.55 * _pulseAnim.value + 0.15),
                               blurRadius: 40 + 20 * _pulseAnim.value,
                               spreadRadius: 5 * _pulseAnim.value,
                             ),
@@ -134,7 +137,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                         child: const Center(
                           child: Text(
-                            'S',
+                            'T',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 52,
@@ -154,16 +157,33 @@ class _SplashScreenState extends State<SplashScreen>
                 opacity: _logoOpacity,
                 child: ShaderMask(
                   shaderCallback: (bounds) => const LinearGradient(
-                    colors: [AppTheme.primary, AppTheme.purple],
+                    colors: [
+                      Color(0xFFD946EF), // fuchsia
+                      Color(0xFF7B2FBE), // neon purple
+                    ],
                   ).createShader(bounds),
                   child: const Text(
-                    'SocioHub',
+                    'Trade99',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 40,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -1,
                     ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 3),
+              // Powered-by tagline
+              FadeTransition(
+                opacity: _textOpacity,
+                child: const Text(
+                  'powered by GenAIlakes',
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 0.4,
                   ),
                 ),
               ),
@@ -282,7 +302,7 @@ class _LoadingDotsState extends State<_LoadingDots>
               height: 8,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppTheme.primary.withOpacity(scale),
+                color: const Color(0xFF7B2FBE).withOpacity(scale),
               ),
             );
           },

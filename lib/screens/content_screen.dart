@@ -4,6 +4,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/mock_data.dart';
 import '../theme/app_theme.dart';
 import '../widgets/creator_tool_card.dart';
+import '../widgets/streamline_icons.dart';
+import 'social_performance_screen.dart';
+import '../transitions/app_transitions.dart';
 
 class ContentScreen extends StatefulWidget {
   const ContentScreen({super.key});
@@ -45,6 +48,19 @@ class _ContentScreenState extends State<ContentScreen>
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  /// Try native app scheme first, fall back to browser URL on failure.
+  Future<void> _openPlatform(String scheme, String webUrl) async {
+    final schemeUri = Uri.parse(scheme);
+    if (await canLaunchUrl(schemeUri)) {
+      await launchUrl(schemeUri, mode: LaunchMode.externalApplication);
+      return;
+    }
+    final webUri = Uri.parse(webUrl);
+    if (await canLaunchUrl(webUri)) {
+      await launchUrl(webUri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -153,43 +169,56 @@ class _ContentScreenState extends State<ContentScreen>
         children: [
           CreatorToolCard(
             title: 'Record\nReel',
-            icon: Icons.camera_alt_rounded, // Instagram camera
+            icon: BrandIcons.icon(BrandIcons.instagram,
+                size: 52, color: Colors.white),
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [Color(0xFFE1306C), Color(0xFFFCAF45)],
             ),
-            onTap: () => _openUrl('https://www.instagram.com/create/story/'),
+            onTap: () => _openPlatform(
+              'instagram://camera',
+              'https://www.instagram.com/create/story/',
+            ),
           ),
           CreatorToolCard(
             title: 'Upload\nShort',
-            icon: Icons.play_circle_fill_rounded, // YouTube
+            icon: BrandIcons.icon(BrandIcons.youtube,
+                size: 52, color: Colors.white),
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [Color(0xFFFF0000), Color(0xFFCC0000)],
             ),
-            onTap: () => _openUrl('https://www.youtube.com/upload'),
+            onTap: () => _openPlatform(
+              'youtube://',
+              'https://www.youtube.com/upload',
+            ),
           ),
           CreatorToolCard(
             title: 'Tweet\non X',
-            icon: Icons.tag_rounded, // X
+            icon: BrandIcons.icon(BrandIcons.xTwitter,
+                size: 52, color: Colors.white),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [Colors.blueGrey.shade800, Colors.black87],
             ),
-            onTap: () => _openUrl('https://x.com/compose/post'),
+            onTap: () => _openPlatform(
+              'twitter://post',
+              'https://x.com/compose/post',
+            ),
           ),
           CreatorToolCard(
             title: 'Write\nBlog',
-            icon: Icons.edit_note_rounded,
+            icon: BrandIcons.icon(BrandIcons.penNib,
+                size: 52, color: Colors.white),
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [AppTheme.purple, AppTheme.pink],
             ),
-            onTap: () {},
+            onTap: () => _openUrl('https://medium.com/new-story'),
           ),
         ],
       ),
@@ -210,11 +239,19 @@ class _ContentScreenState extends State<ContentScreen>
                       color: AppTheme.textPrimary(ctx),
                       fontSize: 18,
                       fontWeight: FontWeight.w600)),
-              Text('View All',
-                  style: TextStyle(
-                      color: AppTheme.primary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500)),
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  AppRoute(
+                    builder: (_) => const SocialPerformanceScreen(),
+                  ),
+                ),
+                child: const Text('View All',
+                    style: TextStyle(
+                        color: AppTheme.primary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500)),
+              ),
             ],
           ),
           const SizedBox(height: 14),

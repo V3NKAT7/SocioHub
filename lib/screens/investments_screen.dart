@@ -1,9 +1,11 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import '../transitions/app_transitions.dart';
 import '../data/mock_data.dart';
 import '../theme/app_theme.dart';
 import '../widgets/sector_card.dart';
 import '../widgets/investment_donut_chart.dart';
+import 'analytics_dashboard_screen.dart';
 
 class InvestmentsScreen extends StatefulWidget {
   const InvestmentsScreen({super.key});
@@ -16,10 +18,11 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
-  int _periodIndex = 0; // 0=7d, 1=month, 2=custom
-  int _chartToggle = 0; // 0=ROI, 1=Realised P&L
+  int _periodIndex = 0;
+  int _chartToggle = 0;
   final List<String> _periods = ['Last 7 Days', 'Last Month', 'Custom'];
   DateTimeRange? _customRange;
+  late RandomPortfolio _portfolio;
 
   @override
   void initState() {
@@ -30,6 +33,7 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
     );
     _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
     _animController.forward();
+    _portfolio = RandomPortfolio.forSeed(1001); // seed for 'Last 7 Days'
   }
 
   @override
@@ -38,17 +42,43 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
     super.dispose();
   }
 
+  // Seed selection based on active period
+  int get _seed {
+    if (_periodIndex == 2 && _customRange != null) {
+      return _customRange!.start.millisecondsSinceEpoch ~/ 86400000;
+    }
+    return [1001, 2001, 3001][_periodIndex];
+  }
+
+  void _refreshPortfolio() {
+    setState(() => _portfolio = RandomPortfolio.forSeed(_seed));
+  }
+
+  String _fmtInr(double v) {
+    if (v >= 1e7) return '₹${(v / 1e7).toStringAsFixed(2)}Cr';
+    if (v >= 1e5) return '₹${(v / 1e5).toStringAsFixed(2)}L';
+    if (v >= 1e3) return '₹${(v / 1e3).toStringAsFixed(1)}K';
+    return '₹${v.toStringAsFixed(0)}';
+  }
+
   List<double> get _activeChartData =>
-      _chartToggle == 0 ? MockData.chartData : MockData.realisedPnlData;
+      _chartToggle == 0 ? _portfolio.roiLine : _portfolio.pnlLine;
 
-  String get _activeChangeAmount =>
-      _chartToggle == 0 ? '+₹6,492.12' : '+₹4,128.45';
+  String get _activeChangeAmount {
+    final v = _chartToggle == 0 ? _portfolio.earnings : _portfolio.earnings * 0.72;
+    return '+${_fmtInr(v)}';
+  }
 
-  String get _activeChangePercent =>
-      _chartToggle == 0 ? '+5.2%' : '+3.3%';
+  String get _activeChangePercent {
+    final pct = _chartToggle == 0
+        ? _portfolio.roiPercent
+        : _portfolio.roiPercent * 0.72;
+    return '+${pct.toStringAsFixed(1)}%';
+  }
 
+  // Neon purple for ROI, emerald for Realised P&L
   Color get _activeChartColor =>
-      _chartToggle == 0 ? AppTheme.primary : const Color(0xFF10B981);
+      _chartToggle == 0 ? const Color(0xFFB026FF) : const Color(0xFF10B981);
 
   void _navigateToProfile() {
     Navigator.of(context).push(MaterialPageRoute(
@@ -75,10 +105,15 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
           SliverToBoxAdapter(child: _buildHeader(context)),
           SliverToBoxAdapter(child: _buildNetWorthCard(context)),
           SliverToBoxAdapter(child: _buildChartSection(context)),
-          const SliverToBoxAdapter(child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 0),
-            child: InvestmentDonutChart(),
-          )),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 0),
+              child: InvestmentDonutChart(
+                sectors:      _portfolio.sectors,
+                totalInvested: _portfolio.invested,
+              ),
+            ),
+          ),
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),
@@ -180,19 +215,19 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              AppTheme.primary,
-              AppTheme.primary.withOpacity(0.8),
-              const Color(0xFF3B82F6),
+              Color(0xFFADD984), // sage green
+              Color(0xFF7BC85A), // mid green
+              Color(0xFF4DA832), // forest green
             ],
           ),
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: AppTheme.primary.withOpacity(0.35),
+              color: const Color(0xFFADD984).withValues(alpha: 0.35),
               blurRadius: 30,
               offset: const Offset(0, 12),
             ),
@@ -213,18 +248,18 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withOpacity(0.2),
+                    color: const Color(0xFF5A0D3F).withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.trending_up,
-                          color: Color(0xFF10B981), size: 14),
-                      SizedBox(width: 4),
-                      Text('+2.4%',
-                          style: TextStyle(
-                              color: Color(0xFF10B981),
+                      const Icon(Icons.trending_up,
+                          color: Color(0xFFE879F9), size: 14),
+                      const SizedBox(width: 4),
+                      Text('+${_portfolio.roiPercent.toStringAsFixed(1)}%',
+                          style: const TextStyle(
+                              color: Color(0xFFE879F9),
                               fontSize: 12,
                               fontWeight: FontWeight.w600)),
                     ],
@@ -233,8 +268,8 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
               ],
             ),
             const SizedBox(height: 12),
-            const Text('₹10,24,850.00',
-                style: TextStyle(
+            Text(_fmtInr(_portfolio.totalValue),
+                style: const TextStyle(
                     color: Colors.white,
                     fontSize: 32,
                     fontWeight: FontWeight.w700,
@@ -261,7 +296,7 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         children: [
-          // Title + period chips
+          // Title + Analytics arrow
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -270,6 +305,25 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
                       color: AppTheme.textPrimary(ctx),
                       fontSize: 18,
                       fontWeight: FontWeight.w600)),
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  AppRoute(
+                    builder: (_) => AnalyticsDashboardScreen(portfolio: _portfolio),
+                  ),
+                ),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface(ctx),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.border(ctx)),
+                  ),
+                  child: const Icon(Icons.arrow_forward_ios_rounded,
+                      color: AppTheme.primary, size: 16),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -317,9 +371,11 @@ class _InvestmentsScreenState extends State<InvestmentsScreen>
                           _customRange = picked;
                           _periodIndex = 2;
                         });
+                        _refreshPortfolio();
                       }
                     } else {
                       setState(() => _periodIndex = i);
+                      _refreshPortfolio();
                     }
                   },
                   child: AnimatedContainer(

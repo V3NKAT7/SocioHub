@@ -18,12 +18,12 @@ final themeNotifier = ThemeNotifier();
 
 class AppTheme {
   // Brand Colors
-  static const Color primary = Color(0xFF1152D4);
+  static const Color primary = Color(0xFFADD984);
 
   // Dark palette
-  static const Color backgroundDark = Color(0xFF101622);
-  static const Color surfaceDark = Color(0xFF1A2235);
-  static const Color cardDark = Color(0xFF1E2840);
+  static const Color backgroundDark = Color(0xFF0A0A0F);
+  static const Color surfaceDark = Color(0xFF14141E);
+  static const Color cardDark = Color(0xFF1A1A27);
 
   // Light palette
   static const Color backgroundLight = Color(0xFFEBF8FA);
@@ -34,6 +34,7 @@ class AppTheme {
   static const Color emerald = Color(0xFF10B981);
   static const Color amber = Color(0xFFF59E0B);
   static const Color purple = Color(0xFFA855F7);
+  static const Color violet = Color(0xFF7C5CFC);
   static const Color rose = Color(0xFFF43F5E);
   static const Color orange = Color(0xFFF97316);
   static const Color teal = Color(0xFF14B8A6);
@@ -54,12 +55,12 @@ class AppTheme {
 
   static Color textSecondary(BuildContext ctx) =>
       Theme.of(ctx).brightness == Brightness.dark
-          ? Colors.white.withOpacity(0.5)
+          ? Colors.white.withValues(alpha: 0.5)
           : const Color(0xFF64748B);
 
   static Color border(BuildContext ctx) =>
       Theme.of(ctx).brightness == Brightness.dark
-          ? Colors.white.withOpacity(0.06)
+          ? Colors.white.withValues(alpha: 0.06)
           : const Color(0xFFD5E8EB);
 
   // ─── Dark Theme ────────────────────────────────────────
@@ -74,8 +75,8 @@ class AppTheme {
         onPrimary: Colors.white,
         onSurface: Colors.white,
       ),
-      textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
-      fontFamily: GoogleFonts.inter().fontFamily,
+      textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme),
+      fontFamily: GoogleFonts.outfit().fontFamily,
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: backgroundDark,
         selectedItemColor: primary,
@@ -102,8 +103,8 @@ class AppTheme {
         onPrimary: Colors.white,
         onSurface: Color(0xFF1A2235),
       ),
-      textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme),
-      fontFamily: GoogleFonts.inter().fontFamily,
+      textTheme: GoogleFonts.outfitTextTheme(ThemeData.light().textTheme),
+      fontFamily: GoogleFonts.outfit().fontFamily,
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: surfaceLight,
         selectedItemColor: primary,
