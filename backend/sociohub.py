@@ -654,3 +654,334 @@ def get_investment_tracking(
         "roi_line": _normalise(roi_raw),
         "pnl_line": _normalise(pnl_raw),
     }
+
+
+# =============================================================================
+# AUTH MODULE
+# =============================================================================
+import uuid
+import secrets
+from datetime import datetime, timedelta
+
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, Float
+from sqlalchemy.orm import declarative_base
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+
+Base = declarative_base()
+
+# ─── JWT / Password config ────────────────────────────────────────────────────
+JWT_SECRET          = os.getenv("JWT_SECRET", "change-me")
+JWT_ALGORITHM       = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_EXPIRE_MINUTES  = int(os.getenv("JWT_EXPIRE_MINUTES", 1440))
+
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+# ─── ORM Models (auto-created by create_all on startup) ──────────────────────
+
+class User(Base):
+    __tablename__ = "sh_users"
+    id             = Column(Integer, primary_key=True, index=True)
+    email          = Column(String, unique=True, nullable=False, index=True)
+    hashed_password= Column(String, nullable=False)
+    referral_code  = Column(String, unique=True, nullable=False)
+    is_active      = Column(Boolean, default=True)
+    created_at     = Column(DateTime, default=datetime.utcnow)
+
+
+class Referral(Base):
+    __tablename__ = "sh_referrals"
+    id             = Column(Integer, primary_key=True, index=True)
+    referrer_id    = Column(Integer, nullable=False)       # FK → sh_users.id
+    referred_email = Column(String, nullable=False)
+    signed_up_at   = Column(DateTime, nullable=True)
+    reward_amount  = Column(Float, default=0.0)
+    is_paid        = Column(Boolean, default=False)
+
+
+def create_tables():
+    """Call this once on startup to create sh_users and sh_referrals tables."""
+    Base.metadata.create_all(bind=engine)
+
+
+# ─── Auth Helpers ─────────────────────────────────────────────────────────────
+
+def _hash_password(plain: str) -> str:
+    return pwd_ctx.hash(plain)
+
+
+def _verify_password(plain: str, hashed: str) -> bool:
+    return pwd_ctx.verify(plain, hashed)
+
+
+def _make_token(user_id: int, email: str) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=JWT_EXPIRE_MINUTES)
+    payload = {"sub": str(user_id), "email": email, "exp": expire}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_token(token: str) -> dict:
+    """Raises JWTError on invalid/expired token."""
+    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
+
+# ─── Auth Business Logic ──────────────────────────────────────────────────────
+
+def login_user(db: Session, email: str, password: str) -> dict:
+    """
+    POST /auth/login
+    Verifies credentials and returns a JWT access token.
+    Raises ValueError on bad credentials.
+    """
+    row = db.execute(
+        text("SELECT id, email, hashed_password FROM sh_users WHERE email = :e AND is_active = true"),
+        {"e": email},
+    ).fetchone()
+
+    if not row or not _verify_password(password, row.hashed_password):
+        raise ValueError("Invalid email or password")
+
+    token = _make_token(row.id, row.email)
+    return {
+        "access_token": token,
+        "token_type":   "bearer",
+        "user_id":      row.id,
+        "email":        row.email,
+    }
+
+
+def forgot_password(db: Session, email: str) -> dict:
+    """
+    POST /auth/forgot-password
+    Generates a password-reset token and (in production) would email it.
+    Returns the token directly for now — wire to an email service later.
+    """
+    row = db.execute(
+        text("SELECT id FROM sh_users WHERE email = :e"),
+        {"e": email},
+    ).fetchone()
+
+    # Always return success to prevent email enumeration attacks
+    if not row:
+        return {"message": "If that email exists, a reset link has been sent."}
+
+    reset_token = secrets.token_urlsafe(32)
+    # TODO: Store reset_token in DB with expiry + send via email (SendGrid / SES)
+    return {
+        "message":     "If that email exists, a reset link has been sent.",
+        "debug_token": reset_token,   # Remove this line in production!
+    }
+
+
+# =============================================================================
+# SOCIAL MODULE  (MongoDB)
+# =============================================================================
+from pymongo import MongoClient, DESCENDING
+
+MONGO_URI     = os.getenv("MONGO_URI",     "mongodb://localhost:27017")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "sociohub_social")
+
+_mongo_client: MongoClient | None = None
+
+
+def get_mongo_db():
+    """Returns the MongoDB database instance (singleton client)."""
+    global _mongo_client
+    if _mongo_client is None:
+        _mongo_client = MongoClient(MONGO_URI)
+    return _mongo_client[MONGO_DB_NAME]
+
+
+def _seed_templates_if_empty(db):
+    """Seeds default financial story templates if the collection is empty."""
+    if db["templates"].count_documents({}) == 0:
+        db["templates"].insert_many([
+            {
+                "id": "tmpl_1",
+                "title": "Portfolio Milestone",
+                "description": "Share when your portfolio hits a new high.",
+                "icon": "trending_up",
+                "color": "#10B981",
+                "fields": ["milestone_amount", "percentage_gain"],
+            },
+            {
+                "id": "tmpl_2",
+                "title": "Trade of the Day",
+                "description": "Highlight your best trade from today.",
+                "icon": "bolt",
+                "color": "#F59E0B",
+                "fields": ["symbol", "entry_price", "exit_price", "pnl"],
+            },
+            {
+                "id": "tmpl_3",
+                "title": "Market Insight",
+                "description": "Share your view on a market sector.",
+                "icon": "insights",
+                "color": "#6366F1",
+                "fields": ["sector", "sentiment", "reasoning"],
+            },
+        ])
+
+
+# ─── Social Business Logic ────────────────────────────────────────────────────
+
+def get_social_feed(page: int = 1, page_size: int = 20) -> dict:
+    """
+    GET /social/feed
+    Fetches a paginated list of financial stories from MongoDB.
+    """
+    mdb   = get_mongo_db()
+    skip  = (page - 1) * page_size
+    total = mdb["feed"].count_documents({})
+    posts = list(
+        mdb["feed"]
+        .find({}, {"_id": 0})
+        .sort("created_at", DESCENDING)
+        .skip(skip)
+        .limit(page_size)
+    )
+    return {
+        "page":       page,
+        "page_size":  page_size,
+        "total":      total,
+        "has_more":   (skip + page_size) < total,
+        "posts":      posts,
+    }
+
+
+def toggle_like(story_id: str, user_id: int) -> dict:
+    """
+    POST /social/likes
+    Toggles a like atomically. Returns new like count and liked status.
+    """
+    mdb  = get_mongo_db()
+    post = mdb["feed"].find_one({"story_id": story_id}, {"_id": 0, "liked_by": 1, "likes": 1})
+
+    if not post:
+        raise ValueError(f"Story {story_id} not found")
+
+    liked_by: list = post.get("liked_by", [])
+    if user_id in liked_by:
+        # Unlike
+        mdb["feed"].update_one(
+            {"story_id": story_id},
+            {"$pull": {"liked_by": user_id}, "$inc": {"likes": -1}},
+        )
+        return {"story_id": story_id, "liked": False, "likes": max(0, post.get("likes", 1) - 1)}
+    else:
+        # Like
+        mdb["feed"].update_one(
+            {"story_id": story_id},
+            {"$addToSet": {"liked_by": user_id}, "$inc": {"likes": 1}},
+        )
+        return {"story_id": story_id, "liked": True, "likes": post.get("likes", 0) + 1}
+
+
+def record_share(story_id: str, platform: str, user_id: int) -> dict:
+    """
+    POST /social/shares
+    Increments the share count and logs which platform the story was shared to.
+    """
+    mdb = get_mongo_db()
+    result = mdb["feed"].update_one(
+        {"story_id": story_id},
+        {
+            "$inc": {"shares": 1},
+            "$push": {
+                "share_log": {
+                    "user_id":  user_id,
+                    "platform": platform,
+                    "shared_at": datetime.utcnow().isoformat(),
+                }
+            },
+        },
+    )
+    if result.matched_count == 0:
+        raise ValueError(f"Story {story_id} not found")
+    return {"story_id": story_id, "platform": platform, "recorded": True}
+
+
+def get_story_templates() -> dict:
+    """
+    GET /social/templates
+    Returns all financial story templates. Seeds defaults if empty.
+    """
+    mdb = get_mongo_db()
+    _seed_templates_if_empty(mdb)
+    templates = list(mdb["templates"].find({}, {"_id": 0}))
+    return {"templates": templates}
+
+
+# =============================================================================
+# REFERRAL MODULE  (PostgreSQL)
+# =============================================================================
+
+def get_my_referral_link(db: Session, user_id: int) -> dict:
+    """
+    GET /referrals/my-link
+    Returns the authenticated user's unique referral link.
+    """
+    row = db.execute(
+        text("SELECT referral_code, email FROM sh_users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+
+    if not row:
+        raise ValueError("User not found")
+
+    base_url = os.getenv("BACKEND_URL", "http://192.168.1.139:8000")
+    return {
+        "referral_code": row.referral_code,
+        "referral_link": f"{base_url}/join?ref={row.referral_code}",
+        "share_message": f"Join me on SocioHub and grow your financial footprint! Use my link: {base_url}/join?ref={row.referral_code}",
+    }
+
+
+def get_referral_rewards(db: Session, user_id: int) -> dict:
+    """
+    GET /referrals/rewards
+    Fetches the user's earned rewards and pending referral status.
+    """
+    rows = db.execute(
+        text("""
+            SELECT
+                COUNT(*)                                     AS total_referrals,
+                COUNT(*) FILTER (WHERE signed_up_at IS NOT NULL) AS successful_referrals,
+                COUNT(*) FILTER (WHERE signed_up_at IS NULL)     AS pending_referrals,
+                COALESCE(SUM(reward_amount) FILTER (WHERE is_paid = true),  0) AS total_earned,
+                COALESCE(SUM(reward_amount) FILTER (WHERE is_paid = false AND signed_up_at IS NOT NULL), 0) AS pending_payout
+            FROM sh_referrals
+            WHERE referrer_id = :uid
+        """),
+        {"uid": user_id},
+    ).fetchone()
+
+    recent = db.execute(
+        text("""
+            SELECT referred_email, signed_up_at, reward_amount, is_paid
+            FROM sh_referrals
+            WHERE referrer_id = :uid
+            ORDER BY id DESC
+            LIMIT 10
+        """),
+        {"uid": user_id},
+    ).fetchall()
+
+    return {
+        "total_referrals":      int(rows.total_referrals or 0),
+        "successful_referrals": int(rows.successful_referrals or 0),
+        "pending_referrals":    int(rows.pending_referrals or 0),
+        "total_earned":         round(float(rows.total_earned or 0),   2),
+        "pending_payout":       round(float(rows.pending_payout or 0), 2),
+        "recent_referrals": [
+            {
+                "email":        r.referred_email,
+                "signed_up":    str(r.signed_up_at) if r.signed_up_at else None,
+                "reward":       float(r.reward_amount or 0),
+                "is_paid":      r.is_paid,
+            }
+            for r in recent
+        ],
+    }
+

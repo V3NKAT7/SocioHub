@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/social_post.dart';
 import '../theme/app_theme.dart';
+import '../services/api_service.dart';
 
 class SocialFeedScreen extends StatefulWidget {
   const SocialFeedScreen({super.key});
@@ -10,29 +11,76 @@ class SocialFeedScreen extends StatefulWidget {
 }
 
 class _SocialFeedScreenState extends State<SocialFeedScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   SocialPlatform? _selectedFilter;
 
+  // ── Live API state ────────────────────────────────────────────────────────
+  // TODO: Replace this placeholder with a real token from your Auth flow.
+  // e.g., store the token in a global singleton or use a state manager.
+  static const String _devToken = 'REPLACE_WITH_JWT_FROM_LOGIN';
+
+  List<dynamic> _livePosts = [];
+  bool _isLoading = false;
+  String? _errorMessage;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // 1. Listen for background -> foreground resumes
+    
     _animController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
     _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
     _animController.forward();
+
+    // 2. Initial cold-start fetch
+    _fetchFeedData();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // Clean up the observer
     _animController.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 3. Warm-start fetch (User brought app from background to foreground)
+      debugPrint("📱 App Resumed: Fetching latest social feed...");
+      _fetchFeedData();
+    }
+  }
+
+  Future<void> _fetchFeedData() async {
+    debugPrint('🔄 Fetching fresh feed from http://192.168.1.139:8000...');
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final response = await SocialService.getFeed(token: _devToken);
+      setState(() {
+        _livePosts = (response['posts'] as List<dynamic>?) ?? [];
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Feed fetch failed: $e');
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Could not load feed. Running on mock data.';
+      });
+    }
+  }
+
+  /// Falls back to MockSocialData if the live API hasn't returned posts yet.
   List<SocialPost> get _filteredPosts {
+    if (_livePosts.isNotEmpty) return [];  // Live mode: bypass this getter
     if (_selectedFilter == null) return MockSocialData.posts;
     return MockSocialData.posts
         .where((p) => p.platform == _selectedFilter)
@@ -47,18 +95,157 @@ class _SocialFeedScreenState extends State<SocialFeedScreen>
         children: [
           _buildHeader(context),
           _buildFilterChips(context),
+          // ── Error banner (shown above feed if API fails) ────────────────
+          if (_errorMessage != null)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange.withOpacity(0.4)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.wifi_off_rounded, color: Colors.orange, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Colors.orange, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // ── Feed list ─────────────────────────────────────────────────────
           Expanded(
-            child: ListView.builder(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-              itemCount: _filteredPosts.length,
-              itemBuilder: (context, index) {
-                final post = _filteredPosts[index];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: _buildPostCard(context, post),
-                );
-              },
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _livePosts.isNotEmpty
+                    // ── LIVE data from backend ──────────────────────────────
+                    ? RefreshIndicator(
+                        onRefresh: _fetchFeedData,
+                        child: ListView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                          itemCount: _livePosts.length,
+                          itemBuilder: (context, index) {
+                            final post = _livePosts[index] as Map<String, dynamic>;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _buildLivePostCard(context, post),
+                            );
+                          },
+                        ),
+                      )
+                    // ── MOCK fallback when API is offline ───────────────────
+                    : RefreshIndicator(
+                        onRefresh: _fetchFeedData,
+                        child: ListView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                          itemCount: _filteredPosts.length,
+                          itemBuilder: (context, index) {
+                            final post = _filteredPosts[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _buildPostCard(context, post),
+                            );
+                          },
+                        ),
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Live post card (renders raw JSON from the backend) ───────────────────
+  Widget _buildLivePostCard(BuildContext ctx, Map<String, dynamic> post) {
+    final likes  = post['likes']  as int?   ?? 0;
+    final shares = post['shares'] as int?   ?? 0;
+    final author = post['author'] as String? ?? 'SocioHub User';
+    final content= post['content']as String? ?? '';
+    final time   = post['created_at'] as String? ?? '';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface(ctx),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border(ctx)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppTheme.primary.withOpacity(0.2),
+                  child: Text(
+                    author.isNotEmpty ? author[0].toUpperCase() : '?',
+                    style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(author,
+                          style: TextStyle(
+                              color: AppTheme.textPrimary(ctx),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14)),
+                      Text(time,
+                          style: TextStyle(
+                              color: AppTheme.textSecondary(ctx), fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Content
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: Text(content,
+                style: TextStyle(
+                    color: AppTheme.textPrimary(ctx).withOpacity(0.85),
+                    fontSize: 14,
+                    height: 1.5)),
+          ),
+          // Actions
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.textPrimary(ctx).withOpacity(0.02),
+              border: Border(top: BorderSide(color: AppTheme.border(ctx))),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.favorite_outline, size: 18,
+                    color: AppTheme.textSecondary(ctx)),
+                const SizedBox(width: 6),
+                Text('$likes',
+                    style: TextStyle(
+                        color: AppTheme.textSecondary(ctx),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(width: 20),
+                Icon(Icons.share_outlined, size: 18,
+                    color: AppTheme.textSecondary(ctx)),
+                const SizedBox(width: 6),
+                Text('$shares',
+                    style: TextStyle(
+                        color: AppTheme.textSecondary(ctx),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ],
             ),
           ),
         ],
@@ -67,6 +254,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen>
   }
 
   Widget _buildHeader(BuildContext ctx) {
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Row(
